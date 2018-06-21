@@ -12,7 +12,7 @@ output: html_document
 if (!require("pacman")) install.packages("pacman")
 
 # Install and load required packages from CRAN ---------------------------------
-pacman::p_load(tidyverse,knitr,sf,devtools,here,leaflet,htmltools,
+pacman::p_load(tidyverse,readxl,knitr,sf,devtools,here,leaflet,htmltools,
                leaflet.extras,mapview)
 
 # Define method of table generation (whether kable or xtable) for best formatting
@@ -41,10 +41,15 @@ useCrossOrigin <- F # USe cross origin
 The map below allows for the interacitve exploration of seep data. Base maps may be changed and other layers may be toggled on/off using the layer controls below the map inset.  
 
 ```{r CreateSimpleFeatures, include=FALSE}
-seep.data <- read_csv(here("Data/waypoints.csv"))
+# Read seep regions
+seep.regions <- read_excel(here("Data/2013_SHIMADA_SaKe_SEEPRegions.xlsx")) %>%
+  mutate(type = "Seep")
+# Read uncertain regions
+uncertain.regions <- read_excel(here("Data/2013_SHIMADA_SaKe_UNCERTAINRegions.xlsx")) %>%
+  mutate(type = "Uncertain")
 # Convert location data frame to simple feature
-seeps <- seep.data %>% 
-  st_as_sf(coords = c("lon","lat"), crs = 4326) 
+seeps <- bind_rows(seep.regions, uncertain.regions) %>% 
+  st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326) 
 ```
 
 ```{r LeafletNasc, echo=FALSE}
