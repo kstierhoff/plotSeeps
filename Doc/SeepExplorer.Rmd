@@ -59,15 +59,8 @@ seeps <- bind_rows(seep.regions, uncertain.regions) %>%
 # Info on tile caching
 # https://bhaskarvk.github.io/leaflet.extras/reference/TileCaching.html
 
-# # Set padding around data  
-# imap.bounds <- map_bounds(nasc$lat, nasc$long, 0.1) 
-
-# # Create color palette for MPAs
-# mpaPal  <- colorFactor(topo.colors(10), ca_mpas$Type)
-# # Create color palette for NASC
-# nascPal <- colorFactor(nasc.colors.all, nasc.sf$bin.level)
-# # Create color pallette for CUFES
-# cufesPal <- colorFactor(cufes.colors, cufes.sf$Species)
+# Create color palette for seep types
+seepPal <- colorFactor(c("red","blue"), c("Seep","Uncertain"))
 
 # Create leaflet map
 i.map <- leaflet() %>% 
@@ -83,10 +76,15 @@ i.map <- leaflet() %>%
   addProviderTiles(providers$OpenMapSurfer.Roads, group = "OpenMap Surfer Roads", 
                    options = tileOptions(useCache = useCachedTile, 
                                          crossOrigin = useCrossOrigin)) %>% 
-  addCircleMarkers(data = seeps, radius = 5, color = "#000000", stroke = TRUE, weight = 2, opacity = 0.8,
-                   fillOpacity = 1, fillColor =  "blue", label = ~htmlEscape(type), group =  "Seeps") %>%
+  # Add seep locations
+  addCircleMarkers(data = seeps, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
+                   fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
+                   group = "Seeps") %>% 
   # Add graticule
   addGraticule(interval = 2, group = "Graticule") %>% 
+  # Add legends
+  addLegend("bottomleft", colors = c("red","blue"), values = c("Seep","Uncertain"),
+            labels = c("Seep","Uncertain"), title = "Seep type", opacity = 1) %>%
   # Add extras
   addMiniMap(position = "topright") %>% 
   addScaleBar(position = "bottomright") %>% 
