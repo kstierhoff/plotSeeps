@@ -1,0 +1,101 @@
+---
+title: "Seep Explorer"
+author: "Serena"
+date: '`r format(Sys.time(), "%d %B %Y")`'
+output: html_document
+---
+
+```{r LoadLibraries, error=FALSE, message=FALSE, warning=FALSE, echo=F}
+# This section of code installs and loads the required packages
+
+# Install and load pacman (library management package)
+if (!require("pacman")) install.packages("pacman")
+
+# Install and load required packages from CRAN ---------------------------------
+pacman::p_load(tidyverse,knitr,sf,devtools,here,leaflet,htmltools,
+               leaflet.extras,mapview)
+
+# Define method of table generation (whether kable or xtable) for best formatting
+doc.type <- knitr::opts_knit$get('rmarkdown.pandoc.to')
+if (is.null(doc.type)) {doc.type <- "html"}
+
+# Set global knitr chunk options
+if (.Platform$OS.type == "unix") {
+  # Do not specify Cairo device for MacOS
+  knitr::opts_chunk$set(echo = F,warning = F, message = F,
+                        fig.align = 'center', out.width = '100%', dev = "png", dpi = 150)
+} else {
+  knitr::opts_chunk$set(echo = F,warning = F, message = F,
+                        fig.align = 'center', out.width = '100%', dev = "png", dpi = 150,
+                        dev.args = list(type = "cairo"))
+}
+
+# Plotting preferences -------------------------------------------------------
+# Leaflet tile options; set both to T if caching
+save.imap      <- F # Save the interactive map
+useCachedTile  <- F # Use cached tiles
+useCrossOrigin <- F # USe cross origin
+```  
+
+# Interactively explore methane seep data 
+The map below allows for the interacitve exploration of seep data. Base maps may be changed and other layers may be toggled on/off using the layer controls below the map inset.  
+
+```{r CreateSimpleFeatures, include=FALSE}
+seep.data <- read_csv(here("Data/waypoints.csv"))
+# Convert location data frame to simple feature
+seeps <- seep.data %>% 
+  st_as_sf(coords = c("lon","lat"), crs = 4326) 
+```
+
+```{r LeafletNasc, echo=FALSE}
+# Leaflet options
+# https://rstudio.github.io/leaflet/
+
+# Info on tile caching
+# https://bhaskarvk.github.io/leaflet.extras/reference/TileCaching.html
+
+# # Set padding around data  
+# imap.bounds <- map_bounds(nasc$lat, nasc$long, 0.1) 
+
+# # Create color palette for MPAs
+# mpaPal  <- colorFactor(topo.colors(10), ca_mpas$Type)
+# # Create color palette for NASC
+# nascPal <- colorFactor(nasc.colors.all, nasc.sf$bin.level)
+# # Create color pallette for CUFES
+# cufesPal <- colorFactor(cufes.colors, cufes.sf$Species)
+
+# Create leaflet map
+i.map <- leaflet() %>% 
+  # Enable tile caching
+  enableTileCaching() %>%
+  # Add provider tiles; # http://leaflet-extras.github.io/leaflet-providers/preview/index.html
+  addProviderTiles(providers$Esri.OceanBasemap, 
+                   options = tileOptions(useCache = useCachedTile, group = "Esri Ocean (default)",
+                                         crossOrigin = useCrossOrigin)) %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB Positron",
+                   options = tileOptions(useCache = useCachedTile, 
+                                         crossOrigin = useCrossOrigin)) %>%
+  addProviderTiles(providers$OpenMapSurfer.Roads, group = "OpenMap Surfer Roads", 
+                   options = tileOptions(useCache = useCachedTile, 
+                                         crossOrigin = useCrossOrigin)) %>% 
+  addCircleMarkers(data = seeps, radius = 5, color = "#000000", stroke = TRUE, weight = 2, opacity = 0.8,
+                   fillOpacity = 1, fillColor =  "blue", label = ~htmlEscape(type), group =  "Seeps") %>%
+  # Add graticule
+  addGraticule(interval = 2, group = "Graticule") %>% 
+  # Add extras
+  addMiniMap(position = "topright") %>% 
+  addScaleBar(position = "bottomright") %>% 
+    # Add layer controls
+  addLayersControl(
+    baseGroups = c("Esri Ocean (default)","CartoDB Positron", "OpenMap Surfer Roads"),
+    overlayGroups = c("Seeps", "Graticule"),
+    options = layersControlOptions(collapsed = TRUE)) 
+
+# Save Leaflet map to HTML file
+if (save.imap) {
+  mapshot(i.map, url = here("Output/interactive_explorer.HTML"))
+}
+
+# Display map
+i.map
+```
