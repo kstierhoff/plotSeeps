@@ -1,6 +1,6 @@
 ---
 title: "Seep Explorer"
-author: "Serena"
+author: "Serena Geroe"
 date: '`r format(Sys.time(), "%d %B %Y")`'
 output: html_document
 ---
@@ -34,7 +34,7 @@ if (.Platform$OS.type == "unix") {
 # Leaflet tile options; set both to T if caching
 save.imap      <- F # Save the interactive map
 useCachedTile  <- F # Use cached tiles
-useCrossOrigin <- F # USe cross origin
+useCrossOrigin <- F # Use cross origin
 ```  
 
 # Interactively explore methane seep data 
@@ -44,12 +44,19 @@ The map below allows for the interacitve exploration of seep data. Base maps may
 # Read seep regions
 seep.regions <- read_excel(here("Data/2013_SHIMADA_SaKe_SEEPRegions.xlsx")) %>%
   mutate(type = "Seep")
+
 # Read uncertain regions
 uncertain.regions <- read_excel(here("Data/2013_SHIMADA_SaKe_UNCERTAINRegions.xlsx")) %>%
   mutate(type = "Uncertain")
-# Convert location data frame to simple feature
+
+# Convert location data frame to simple feature (an object with spatial/geographic information)
 seeps <- bind_rows(seep.regions, uncertain.regions) %>% 
   st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326) 
+```
+
+```{r SeepLocationsROV}
+seeps.rov <- read_csv(here("Data/seeps_rov.csv")) %>% 
+  st_as_sf(coords = c("long_r","lat_r"), crs = 4326) 
 ```
 
 ```{r LeafletNasc, echo=FALSE}
@@ -76,10 +83,14 @@ i.map <- leaflet() %>%
   addProviderTiles(providers$OpenMapSurfer.Roads, group = "OpenMap Surfer Roads", 
                    options = tileOptions(useCache = useCachedTile, 
                                          crossOrigin = useCrossOrigin)) %>% 
-  # Add seep locations
+  # Add seep locations from acoustics
   addCircleMarkers(data = seeps, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
                    fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
-                   group = "Seeps") %>% 
+                   group = "Seeps-Acoustics") %>% 
+  # Add seep locations from ROV
+  addCircleMarkers(data = seeps.rov, radius = 5, color = "green", stroke = TRUE, weight = 1,
+                   fillOpacity = 0.75, label = ~htmlEscape(sci_name),
+                   group = "Seeps-ROV") %>% 
   # Add graticule
   addGraticule(interval = 2, group = "Graticule") %>% 
   # Add legends
