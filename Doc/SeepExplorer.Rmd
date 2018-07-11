@@ -40,21 +40,18 @@ useCrossOrigin <- F # Use cross origin
 # Interactively explore methane seep data 
 The map below allows for the interacitve exploration of seep data. Base maps may be changed and other layers may be toggled on/off using the layer controls below the map inset.  
 
-```{r CreateSimpleFeatures, include=FALSE}
+```{r SeepLocationsAcoustics, include=F}
 # Read seep regions
-seep.regions <- read_excel(here("Data/2013_SHIMADA_SaKe_SEEPRegions.xlsx")) %>%
-  mutate(type = "Seep")
-
-# Read uncertain regions
-uncertain.regions <- read_excel(here("Data/2013_SHIMADA_SaKe_UNCERTAINRegions.xlsx")) %>%
-  mutate(type = "Uncertain")
-
-# Convert location data frame to simple feature (an object with spatial/geographic information)
-seeps <- bind_rows(seep.regions, uncertain.regions) %>% 
-  st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326) 
+seeps.acoustics <- read_csv(here("Data/seeps_acoustics.csv")) %>% 
+  mutate(Type = case_when(
+    str_detect(Name, "Seep") ~ "Seep",
+    str_detect(Name, "Uncertain") ~ "Uncertain",
+    TRUE ~ "Missing",
+  )) %>% 
+  st_as_sf(coords = c("Lon","Lat"), crs = 4326) 
 ```
 
-```{r SeepLocationsROV}
+```{r SeepLocationsROV, include=F}
 seeps.rov <- read_csv(here("Data/seeps_rov.csv")) %>% 
   st_as_sf(coords = c("long_r","lat_r"), crs = 4326) 
 ```
@@ -84,8 +81,8 @@ i.map <- leaflet() %>%
                    options = tileOptions(useCache = useCachedTile, 
                                          crossOrigin = useCrossOrigin)) %>% 
   # Add seep locations from acoustics
-  addCircleMarkers(data = seeps, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
-                   fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
+  addCircleMarkers(data = seeps.acoustics, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
+                   fillOpacity = 0.75, fillColor =  ~seepPal(Type), label = ~htmlEscape(Type),
                    group = "Seeps-Acoustics") %>% 
   # Add seep locations from ROV
   addCircleMarkers(data = seeps.rov, radius = 5, color = "green", stroke = TRUE, weight = 1,
@@ -102,7 +99,7 @@ i.map <- leaflet() %>%
     # Add layer controls
   addLayersControl(
     baseGroups = c("Esri Ocean (default)","CartoDB Positron", "OpenMap Surfer Roads"),
-    overlayGroups = c("Seeps", "Graticule"),
+    overlayGroups = c("Seeps-Acoustics", "Seeps-ROV", "Graticule"),
     options = layersControlOptions(collapsed = TRUE)) 
 
 # Save Leaflet map to HTML file
