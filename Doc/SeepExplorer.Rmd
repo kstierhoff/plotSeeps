@@ -32,6 +32,7 @@ if (.Platform$OS.type == "unix") {
 
 # Plotting preferences -------------------------------------------------------
 # Leaflet tile options; set both to T if caching
+get.nav        <- F # Download nav data from ERDDAP
 save.imap      <- F # Save the interactive map
 useCachedTile  <- F # Use cached tiles
 useCrossOrigin <- F # Use cross origin
@@ -54,6 +55,65 @@ seeps.acoustics <- read_csv(here("Data/seeps_acoustics.csv")) %>%
 ```{r SeepLocationsROV, include=F}
 seeps.rov <- read_csv(here("Data/seeps_rov.csv")) %>% 
   st_as_sf(coords = c("long_r","lat_r"), crs = 4326) 
+```
+
+```{r ProcessNav}
+if (get.nav) {
+  # Define ERDDAP data variables -------------------------------------------------
+  erddap.vars       <- c("time,latitude,longitude,platformSpeed")
+  erddap.classes    <- c("factor","numeric","numeric","numeric")
+  erddap.headers    <- c("time","lat","long","SOG")
+  erddap.info <- read_csv(here("Data/survey_dates.csv"))
+  
+  # Set limits for latitude and longitude ----------------------------------------
+  min.lat  <-   31
+  max.lat  <-   52
+  min.long <- -132
+  max.long <- -117
+  
+  # Import vessel nav data from ERDDAP -------------------------------------------------------
+  nav <- data.frame()
+  for (i in seq_along(erddap.info)) {
+    # Generate ERDDAP URL
+    dataURL = URLencode(paste("http://coastwatch.pfeg.noaa.gov/erddap/tabledap/fsuNoaaShip",
+                              erddap.info$vessel[i], ".csv0?", erddap.vars,
+                              "&time>=", erddap.info$start_date[i],
+                              "&time<=", erddap.info$end_date[i], 
+                              sep = ''))
+    # Download and parse ERDDAP nav data
+    nav.temp <- data.frame(read.csv(dataURL, header = F, 
+                                    colClasses = erddap.classes, 
+                                    row.names = NULL, skip = 0)) %>% 
+      mutate(survey = erddap.info$survey[i],
+             vessel = erddap.info$vessel[i])
+    # Combine results
+    nav <- bind_rows(nav, nav.temp) 
+  }
+  
+  # Rename columns
+  colnames(nav)[seq_along(erddap.headers)] <- erddap.headers
+  
+  # Format results
+  nav <- nav %>%  
+    mutate(long     = long - 360) %>% # Put longitude into E/W format
+    mutate(datetime = as.POSIXct(time,format = "%FT%T")) %>% # Convert date/time to POSIXct
+    mutate(SOG      = SOG * 1.94384) %>%                         # Convert SOG from m/s to knots
+    filter(between(long, min.long, max.long)) %>%              # Filter lat/long data
+    filter(between(lat, min.lat, max.lat)) 
+  
+  # Convert hauls to sf; CRS = 4326
+  nav.sf <- st_as_sf(nav, coords = c("long","lat"), crs = 4326) %>% 
+    group_by(survey) %>% 
+    summarise(do_union = F) %>% 
+    st_cast("LINESTRING")
+  
+  # save results
+  save(nav, nav.sf, file = here("Data/nav_data.Rdata"))
+  
+} else {
+  # Load saved data
+  load(here("Data/nav_data.Rdata"))
+}
 ```
 
 ```{r LeafletNasc, echo=FALSE}
@@ -79,7 +139,15 @@ i.map <- leaflet() %>%
                                          crossOrigin = useCrossOrigin)) %>%
   addProviderTiles(providers$OpenMapSurfer.Roads, group = "OpenMap Surfer Roads", 
                    options = tileOptions(useCache = useCachedTile, 
-                                         crossOrigin = useCrossOrigin)) %>% 
+                                         crossOrigin = useCrossOrigin)) %>%
+  addPolylines(data = filter(nav.sf, survey == "1206SH"), color = "#000414", weight = 1, 
+               label = ~htmlEscape(survey), group = "Vessel Track-1206SH") %>% 
+  addPolylines(data = filter(nav.sf, survey == "1307SH"), color = "#000414", weight = 1, 
+               label = ~htmlEscape(survey), group = "Vessel Track-1307SH") %>% 
+  addPolylines(data = filter(nav.sf, survey == "1706RL"), color = "#000414", weight = 1, 
+               label = ~htmlEscape(survey), group = "Vessel Track-1706RL") %>% 
+  addPolylines(data = filter(nav.sf, survey == "1807RL"), color = "#000414", weight = 1, 
+               label = ~htmlEscape(survey), group = "Vessel Track-1807RL") %>% 
   # Add seep locations from acoustics
   addCircleMarkers(data = seeps.acoustics, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
                    fillOpacity = 0.75, fillColor =  ~seepPal(Type), label = ~htmlEscape(Type),
@@ -99,7 +167,9 @@ i.map <- leaflet() %>%
     # Add layer controls
   addLayersControl(
     baseGroups = c("Esri Ocean (default)","CartoDB Positron", "OpenMap Surfer Roads"),
-    overlayGroups = c("Seeps-Acoustics", "Seeps-ROV", "Graticule"),
+    overlayGroups = c("Seeps-Acoustics", "Seeps-ROV", "Vessel Track-1206SH", 
+                      "Vessel Track-1307SH", "Vessel Track-1706RL", "Vessel Track-1807RL", 
+                      "Graticule"),
     options = layersControlOptions(collapsed = TRUE)) 
 
 # Save Leaflet map to HTML file
