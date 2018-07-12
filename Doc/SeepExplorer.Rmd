@@ -196,8 +196,7 @@ i.map <- leaflet() %>%
   addLayersControl(
     baseGroups = c("Esri Ocean (default)","CartoDB Positron", "OpenMap Surfer Roads"),
     overlayGroups = c("Seeps-Acoustics", "Seeps-ROV", "Vessel Track-All","Vessel Track-1206SH", 
-                      "Vessel Track-1307SH", "Vessel Track-1706RL", "Vessel Track-1807RL"), 
-                      # "Graticule"),
+                      "Vessel Track-1307SH", "Vessel Track-1706RL", "Vessel Track-1807RL"),
     options = layersControlOptions(collapsed = TRUE)) 
 
 # Display map
