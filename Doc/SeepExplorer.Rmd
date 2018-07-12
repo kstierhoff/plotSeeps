@@ -13,7 +13,7 @@ if (!require("pacman")) install.packages("pacman")
 
 # Install and load required packages from CRAN ---------------------------------
 pacman::p_load(tidyverse,readxl,knitr,sf,devtools,here,leaflet,htmltools,
-               leaflet.extras,mapview)
+               leaflet.extras,mapview,marmap)
 
 # Define method of table generation (whether kable or xtable) for best formatting
 doc.type <- knitr::opts_knit$get('rmarkdown.pandoc.to')
@@ -32,7 +32,8 @@ if (.Platform$OS.type == "unix") {
 
 # Plotting preferences -------------------------------------------------------
 # Leaflet tile options; set both to T if caching
-get.nav        <- F # Download nav data from ERDDAP
+get.nav        <- F # Download nav data from 
+get.bathy      <- F # Download ETOPTO bathymetry 
 save.imap      <- F # Save the interactive map
 useCachedTile  <- F # Use cached tiles
 useCrossOrigin <- F # Use cross origin
@@ -44,33 +45,33 @@ The map below allows for the interacitve exploration of seep data. Base maps may
 ```{r SeepLocationsAcoustics, include=F}
 # Read seep regions
 seeps.acoustics <- read_csv(here("Data/seeps_acoustics.csv")) %>% 
-  mutate(Type = case_when(
-    str_detect(Name, "Seep") ~ "Seep",
-    str_detect(Name, "Uncertain") ~ "Uncertain",
-    TRUE ~ "Missing",
-  )) %>% 
+  mutate(
+    Type = case_when(
+      str_detect(Name, "Seep") ~ "Seep",
+      str_detect(Name, "Uncertain") ~ "Uncertain",
+      TRUE ~ "Missing")) %>% 
   st_as_sf(coords = c("Lon","Lat"), crs = 4326) 
 ```
 
 ```{r SeepLocationsROV, include=F}
 seeps.rov <- read_csv(here("Data/seeps_rov.csv")) %>% 
+  filter(lat_r < 52) %>% 
   st_as_sf(coords = c("long_r","lat_r"), crs = 4326) 
 ```
 
 ```{r ProcessNav}
+# Define ERDDAP data variables -------------------------------------------------
+erddap.vars       <- c("time,latitude,longitude,platformSpeed")
+erddap.classes    <- c("factor","numeric","numeric","numeric")
+erddap.headers    <- c("time","lat","long","SOG")
+erddap.info       <- read_csv(here("Data/survey_info.csv"))
+
+# Set limits for latitude and longitude ----------------------------------------
+min.lat  <-   31
+max.lat  <-   52
+min.long <- -132
+max.long <- -117
 if (get.nav) {
-  # Define ERDDAP data variables -------------------------------------------------
-  erddap.vars       <- c("time,latitude,longitude,platformSpeed")
-  erddap.classes    <- c("factor","numeric","numeric","numeric")
-  erddap.headers    <- c("time","lat","long","SOG")
-  erddap.info <- read_csv(here("Data/survey_dates.csv"))
-  
-  # Set limits for latitude and longitude ----------------------------------------
-  min.lat  <-   31
-  max.lat  <-   52
-  min.long <- -132
-  max.long <- -117
-  
   # Import vessel nav data from ERDDAP -------------------------------------------------------
   nav <- data.frame()
   for (i in seq_along(erddap.info)) {
@@ -116,6 +117,31 @@ if (get.nav) {
 }
 ```
 
+```{r GetNavDepths}
+# Get bathymetry data across range of nav data (plus/minus one degree lat/long)
+if (get.bathy) {
+  bathy <- getNOAA.bathy(lon1 = min(nav$lon - 1), lon2 = max(nav$lon + 1),
+                         lat1 = max(nav$lat) + 1, lat2 = min(nav$lat) - 1, resolution = 1)
+  
+  # Get nav depth and compute photoperiod
+  nav.depth <- get.depth(bathy, nav$lon, nav$lat, locator = F, distance = T) %>% 
+    bind_cols(select(nav, -lat, -long)) %>% 
+    left_join(select(erddap.info, survey, max_depth)) %>% 
+    filter(depth > -max_depth)
+  
+  # Save bathy results
+  save(bathy, nav.depth, file = here("Data/bathy.Rdata")) 
+} else {
+  load(here("Data/bathy.Rdata"))
+}
+
+# Convert hauls to sf; CRS = 4326
+nav.z.sf <- st_as_sf(nav.depth, coords = c("lon","lat"), crs = 4326) %>% 
+  group_by(survey) %>% 
+    summarise(do_union = F) %>% 
+    st_cast("LINESTRING")
+```
+
 ```{r LeafletNasc, echo=FALSE}
 # Leaflet options
 # https://rstudio.github.io/leaflet/
@@ -140,24 +166,26 @@ i.map <- leaflet() %>%
   addProviderTiles(providers$OpenMapSurfer.Roads, group = "OpenMap Surfer Roads", 
                    options = tileOptions(useCache = useCachedTile, 
                                          crossOrigin = useCrossOrigin)) %>%
-  addPolylines(data = filter(nav.sf, survey == "1206SH"), color = "#000414", weight = 1, 
+  addPolylines(data = nav.sf, color = "green", weight = 1,
+               label = ~htmlEscape(survey), group = "Vessel Track-All") %>%
+  addPolylines(data = filter(nav.z.sf, survey == "1206SH"), color = "#000414", weight = 1.5, 
                label = ~htmlEscape(survey), group = "Vessel Track-1206SH") %>% 
-  addPolylines(data = filter(nav.sf, survey == "1307SH"), color = "#000414", weight = 1, 
+  addPolylines(data = filter(nav.z.sf, survey == "1307SH"), color = "#000414", weight = 1.5, 
                label = ~htmlEscape(survey), group = "Vessel Track-1307SH") %>% 
-  addPolylines(data = filter(nav.sf, survey == "1706RL"), color = "#000414", weight = 1, 
+  addPolylines(data = filter(nav.z.sf, survey == "1706RL"), color = "#000414", weight = 1.5, 
                label = ~htmlEscape(survey), group = "Vessel Track-1706RL") %>% 
-  addPolylines(data = filter(nav.sf, survey == "1807RL"), color = "#000414", weight = 1, 
+  addPolylines(data = filter(nav.z.sf, survey == "1807RL"), color = "#000414", weight = 1.5, 
                label = ~htmlEscape(survey), group = "Vessel Track-1807RL") %>% 
   # Add seep locations from acoustics
   addCircleMarkers(data = seeps.acoustics, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
-                   fillOpacity = 0.75, fillColor =  ~seepPal(Type), label = ~htmlEscape(Type),
+                   fillOpacity = 0.75, fillColor =  ~seepPal(Type), label = ~htmlEscape(Name),
                    group = "Seeps-Acoustics") %>% 
   # Add seep locations from ROV
   addCircleMarkers(data = seeps.rov, radius = 5, color = "green", stroke = TRUE, weight = 1,
                    fillOpacity = 0.75, label = ~htmlEscape(sci_name),
                    group = "Seeps-ROV") %>% 
   # Add graticule
-  addGraticule(interval = 2, group = "Graticule") %>% 
+  # addGraticule(interval = 2, group = "Graticule") %>% 
   # Add legends
   addLegend("bottomleft", colors = c("red","blue"), values = c("Seep","Uncertain"),
             labels = c("Seep","Uncertain"), title = "Seep type", opacity = 1) %>%
@@ -167,16 +195,16 @@ i.map <- leaflet() %>%
     # Add layer controls
   addLayersControl(
     baseGroups = c("Esri Ocean (default)","CartoDB Positron", "OpenMap Surfer Roads"),
-    overlayGroups = c("Seeps-Acoustics", "Seeps-ROV", "Vessel Track-1206SH", 
-                      "Vessel Track-1307SH", "Vessel Track-1706RL", "Vessel Track-1807RL", 
-                      "Graticule"),
+    overlayGroups = c("Seeps-Acoustics", "Seeps-ROV", "Vessel Track-All","Vessel Track-1206SH", 
+                      "Vessel Track-1307SH", "Vessel Track-1706RL", "Vessel Track-1807RL"), 
+                      # "Graticule"),
     options = layersControlOptions(collapsed = TRUE)) 
+
+# Display map
+i.map
 
 # Save Leaflet map to HTML file
 if (save.imap) {
   mapshot(i.map, url = here("Output/interactive_explorer.HTML"))
 }
-
-# Display map
-i.map
 ```
