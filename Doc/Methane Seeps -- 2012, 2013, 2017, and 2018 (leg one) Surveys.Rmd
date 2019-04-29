@@ -1,0 +1,203 @@
+---
+title: "Methane Seeps: 2012, 2013, 2017, and 2018 (leg one) Surveys"
+author: "Serena Geroe"
+date: '`r format(Sys.time(), "%d %B %Y")`'
+output: html_document
+---
+
+```{r LoadLibraries, error=FALSE, message=FALSE, warning=FALSE, echo=F}
+# This section of code installs and loads the required packages
+
+# Install and load pacman (library management package)
+if (!require("pacman")) install.packages("pacman")
+
+# Install and load required packages from CRAN ---------------------------------
+pacman::p_load(tidyverse,readxl,knitr,sf,devtools,here,leaflet,htmltools,
+               leaflet.extras,mapview)
+
+# Define method of table generation (whether kable or xtable) for best formatting
+doc.type <- knitr::opts_knit$get('rmarkdown.pandoc.to')
+if (is.null(doc.type)) {doc.type <- "html"}
+
+# Set global knitr chunk options
+if (.Platform$OS.type == "unix") {
+  # Do not specify Cairo device for MacOS
+  knitr::opts_chunk$set(echo = F,warning = F, message = F,
+                        fig.align = 'center', out.width = '100%', dev = "png", dpi = 150)
+} else {
+  knitr::opts_chunk$set(echo = F,warning = F, message = F,
+                        fig.align = 'center', out.width = '100%', dev = "png", dpi = 150,
+                        dev.args = list(type = "cairo"))
+}
+
+# Plotting preferences -------------------------------------------------------
+# Leaflet tile options; set both to T if caching
+save.imap      <- F # Save the interactive map
+useCachedTile  <- F # Use cached tiles
+useCrossOrigin <- F # USe cross origin
+```  
+
+# Interactively explore methane seep data 
+The map below allows for the interacitve exploration of seep data. Base maps may be changed and other layers may be toggled on/off using the layer controls below the map inset.
+
+```{r CreateSimpleFeatures, include=FALSE}
+# Read seep regions
+seep.regions2012 <- read_excel(here("Data/20120625_SHIMADA_Sake_SEEPRegions.xlsx")) %>%
+  mutate(type = "2012 Seep")
+
+seep.regions2013 <- read_excel(here("Data/2013_SHIMADA_SaKe_SEEPRegions.xlsx")) %>%
+  mutate(type = "2013 Seep")
+
+seep.regions2017 <- read_excel(here("Data/2017_SeepRegions.xlsx")) %>%
+  mutate(type = "2017 Seep")
+
+seep.regions2018 <- read_excel(here("Data/20180710_1807RL_All_Seep_Regions.xlsx")) %>%
+  mutate(type = "2018 Seep")
+
+# Read uncertain regions
+uncertain.regions2012 <- read_excel(here("Data/20120625_SHIMADA_Sake_UNCERTAINRegions.xlsx")) %>%
+  mutate(type = "2012 Uncertain")
+
+uncertain.regions2013 <- read_excel(here("Data/2013_SHIMADA_SaKe_UNCERTAINRegions.xlsx")) %>%
+  mutate(type = "2013 Uncertain")
+
+uncertain.regions2017 <- read_excel(here("Data/2017_UncertainRegions.xlsx")) %>%
+  mutate(type = "2017 Uncertain")
+
+uncertain.regions2018 <- read_excel(here("Data/20180710_1807RL_All_Uncertain_Regions.xlsx")) %>%
+  mutate(type = "2018 Uncertain")
+
+
+# Convert location data frame to simple feature
+seeps2012 <- bind_rows(seep.regions2012) %>% 
+  st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+seeps2013 <- bind_rows(seep.regions2013) %>% 
+  st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+seeps2017 <- bind_rows(seep.regions2017) %>% 
+  st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+seeps2018 <- bind_rows(seep.regions2018) %>% 
+  st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+uncertain2012 <-bind_rows(uncertain.regions2012) %>%
+    st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+uncertain2013 <-bind_rows(uncertain.regions2013) %>%
+    st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+uncertain2017 <-bind_rows(uncertain.regions2017) %>%
+    st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+
+uncertain2018 <-bind_rows(uncertain.regions2018) %>%
+    st_as_sf(coords = c("Lon_M","Lat_M"), crs = 4326)
+```
+
+```{r LeafletNasc,echo=FALSE,eval=F}
+# Leaflet options
+# https://rstudio.github.io/leaflet/
+
+# Info on tile caching
+# https://bhaskarvk.github.io/leaflet.extras/reference/TileCaching.html
+
+# Create color palette for seep types
+seepPal <- colorFactor(c("red","red","orange","orange","green","green","blue","blue"),
+                       c("2012 Uncertain","2012 Seep","2013 Uncertain","2013 Seep","2017 Uncertain","2017 Seep","2018 Uncertain","2018 Seep"))
+
+# Create leaflet map
+i.map <- leaflet() %>% 
+  # Enable tile caching
+  enableTileCaching() %>%
+  # Add provider tiles; # http://leaflet-extras.github.io/leaflet-providers/preview/index.html
+  addProviderTiles(providers$Esri.OceanBasemap, group = "Esri Ocean (default)",
+                   options = tileOptions(useCache = useCachedTile,crossOrigin = useCrossOrigin)) %>%
+  
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB Positron",
+                   options = tileOptions(useCache = useCachedTile, crossOrigin = useCrossOrigin)) %>%
+  
+  addProviderTiles(providers$OpenMapSurfer.Roads, group = "OpenMap Surfer Roads", 
+                   options = tileOptions(useCache = useCachedTile,crossOrigin = useCrossOrigin)) %>%
+  # Add 2012 seeps
+  # addAwesomeMarkers(data = seeps2012, label = ~as.character(type)) %>% 
+  # Add graticule
+  addGraticule(interval = 2, group = "Graticule") %>% 
+  # Add legends
+  addLegend("bottomleft", colors = c("red","red","orange","orange","green","green","blue","blue"),
+            values = c("2012 Uncertain","2012 Seep","2013 Uncertain","2013 Seep",
+                       "2017 Uncertain","2017 Seep","2018 Uncertain","2018 Seep"),
+            labels = c("2012 Uncertain","2012 Seep","2013 Uncertain","2013 Seep",
+                       "2017 Uncertain","2017 Seep","2018 Uncertain","2018 Seep"), 
+            title = "Seep Directory", opacity = 1) %>%
+  # Add extras
+  addMiniMap(position = "topright") %>% 
+  addScaleBar(position = "bottomright")
+  
+  #Make square icon for seeps
+# seepsIcon <- makeIcon(
+#  iconUrl = "https://png.icons8.com/metro/1600/star.png",
+#  iconWidth = 38, iconHeight = 95,
+#  iconAnchorX = 22, iconAnchorY = 94,
+#  shadowUrl = "https://cdn3.iconfinder.com/data/icons/inficons-set-2/512/star-ratings-512.png",
+#  shadowWidth = 50, shadowHeight = 64,
+#  shadowAnchorX = 4, shadowAnchorY = 62
+#)
+
+# Save Leaflet map to HTML file
+if (save.imap) {
+  mapshot(i.map, url = here("Output/interactive_explorer.HTML"))
+}
+
+# Display map
+i.map
+```
+
+```{r}
+seepPal <- colorFactor(c("red","red","orange","orange","green","green","blue","blue"),
+                       c("2012 Uncertain","2012 Seep","2013 Uncertain","2013 Seep",
+                         "2017 Uncertain","2017 Seep","2018 Uncertain","2018 Seep"))
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = seepPal(seeps2012)
+)
+
+leaflet(seeps2013) %>% addTiles() %>%
+  addAwesomeMarkers(icon = icons, label = ~as.character(type))
+   
+  # # Add seep locations
+  # addMarkers(data = seeps2012, label = ~htmlEscape(type), group = "2012 Seep", icon = icons) %>%
+  # 
+  # addMarkers(data = seeps2013, label = ~htmlEscape(type), group = "2013 Seep", icon = icons) %>%
+  # 
+  # addMarkers(data = seeps2017, label = ~htmlEscape(type), group = "2017 Seep", icon = icons) %>%
+  #   
+  # addMarkers(data = seeps2018, label = ~htmlEscape(type), group = "2018 Seep", icon = icons) %>%  
+  # 
+  # addCircleMarkers(data = uncertain2012, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
+  #                  fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
+  #                  group = "2012 Uncertain") %>%
+  # 
+  # addCircleMarkers(data = uncertain2013, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
+  #                  fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
+  #                  group = "2013 Uncertain") %>%
+  # 
+  # addCircleMarkers(data = uncertain2017, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
+  #                  fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
+  #                  group = "2017 Uncertain") %>%
+  #   
+  # addCircleMarkers(data = uncertain2018, radius = 5, color = "#000414", stroke = TRUE, weight = 1,
+  #                  fillOpacity = 0.75, fillColor =  ~seepPal(type), label = ~htmlEscape(type),
+  #                  group = "2018 Uncertain") %>%
+  # 
+  # 
+  #   # Add layer controls
+  # addLayersControl(
+  #   baseGroups = c("Esri Ocean (default)","CartoDB Positron", "OpenMap Surfer Roads"),
+  #   overlayGroups = c("2012 Seep","2013 Seep","2017 Seep","2018 Seep", "2012 Uncertain", "2013 Uncertain","2017 Uncertain","2018 Uncertain", 
+  #                     "Graticule"),
+  #   options = layersControlOptions(collapsed = TRUE)) 
+```
+

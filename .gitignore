@@ -4,3 +4,5 @@
 .Ruserdata
 *.html
 *.Rdata
+*.xlsx
+Figs/*
